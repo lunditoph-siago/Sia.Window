@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <PropertyGroup>
+    <_SiaGLFWNative_IsWindows Condition="'$([System.Runtime.InteropServices.RuntimeInformation]::IsOSPlatform($([System.Runtime.InteropServices.OSPlatform]::Windows)))' == 'true'">true</_SiaGLFWNative_IsWindows>
+    <_SiaGLFWNative_IsMacOS   Condition="'$([System.Runtime.InteropServices.RuntimeInformation]::IsOSPlatform($([System.Runtime.InteropServices.OSPlatform]::OSX)))' == 'true'">true</_SiaGLFWNative_IsMacOS>
+
+    <_SiaGLFWNative_Runtime Condition=" '$(_SiaGLFWNative_Runtime)' == '' And '$(RuntimeIdentifier)' == 'osx-x64'">osx-x64</_SiaGLFWNative_Runtime>
+    <_SiaGLFWNative_Runtime Condition=" '$(_SiaGLFWNative_Runtime)' == '' And '$(RuntimeIdentifier)' == 'osx-arm64'">osx-arm64</_SiaGLFWNative_Runtime>
+    <_SiaGLFWNative_Runtime Condition=" '$(_SiaGLFWNative_Runtime)' == '' And '$(RuntimeIdentifier)' == 'win-x86'">win-x86</_SiaGLFWNative_Runtime>
+    <_SiaGLFWNative_Runtime Condition=" '$(_SiaGLFWNative_Runtime)' == '' And '$(RuntimeIdentifier)' == 'win-x64'">win-x64</_SiaGLFWNative_Runtime>
+    <_SiaGLFWNative_Runtime Condition=" '$(_SiaGLFWNative_Runtime)' == '' And '$(_SiaGLFWNative_IsMacOS)' == 'true' And ('$(Prefer32Bit)' == 'false' Or '$(PlatformTarget)' == 'x64')">osx-x64</_SiaGLFWNative_Runtime>
+    <_SiaGLFWNative_Runtime Condition=" '$(_SiaGLFWNative_Runtime)' == '' And '$(_SiaGLFWNative_IsMacOS)' == 'true' And '$(PlatformTarget)' == 'arm64'">osx-arm64</_SiaGLFWNative_Runtime>
+    <_SiaGLFWNative_Runtime Condition=" '$(_SiaGLFWNative_Runtime)' == '' And '$(_SiaGLFWNative_IsWindows)' == 'true' And ('$(Prefer32Bit)' == 'true' Or '$(PlatformTarget)' == 'x86')">win-x86</_SiaGLFWNative_Runtime>
+    <_SiaGLFWNative_Runtime Condition=" '$(_SiaGLFWNative_Runtime)' == '' And '$(_SiaGLFWNative_IsWindows)' == 'true' And ('$(Prefer32Bit)' == 'false' Or '$(PlatformTarget)' == 'x64')">win-x64</_SiaGLFWNative_Runtime>
+
+    <_SiaGLFWNative_LibName Condition="'$(_SiaGLFWNative_Runtime)' == 'win-x86'">glfw3.dll</_SiaGLFWNative_LibName>
+    <_SiaGLFWNative_LibName Condition="'$(_SiaGLFWNative_Runtime)' == 'win-x64'">glfw3.dll</_SiaGLFWNative_LibName>
+    <_SiaGLFWNative_LibName Condition="'$(_SiaGLFWNative_Runtime)' == 'osx-x64'">libglfw.3.dylib</_SiaGLFWNative_LibName>
+    <_SiaGLFWNative_LibName Condition="'$(_SiaGLFWNative_Runtime)' == 'osx-arm64'">libglfw.3.dylib</_SiaGLFWNative_LibName>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Content Condition="'$(_SiaGLFWNative_Runtime)' != ''"
+             Include="$(MSBuildThisFileDirectory)..\..\runtimes\$(_SiaGLFWNative_Runtime)\native\$(_SiaGLFWNative_LibName)">
+      <Link>%(Filename)%(Extension)</Link>
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+      <Visible>False</Visible>
+    </Content>
+  </ItemGroup>
+</Project>

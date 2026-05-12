@@ -1,0 +1,141 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <IncludeBuildOutput>false</IncludeBuildOutput>
+    <SuppressDependenciesWhenPacking>true</SuppressDependenciesWhenPacking>
+    <PackageId>Sia.GLFW.Native</PackageId>
+    <Description>Pre-built native GLFW library for all platforms.</Description>
+    <PackageLicenseExpression>Zlib</PackageLicenseExpression>
+    <RepositoryUrl>https://github.com/glfw/glfw</RepositoryUrl>
+    <GlfwReleaseTag>3.4</GlfwReleaseTag>
+    <TargetsForTfmSpecificContentInPackage>$(TargetsForTfmSpecificContentInPackage);FetchGlfwBinaries</TargetsForTfmSpecificContentInPackage>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Content Include="build/**" PackagePath="build/%(RecursiveDir)%(Filename)%(Extension)" />
+    <Content Include="build/**" PackagePath="buildTransitive/%(RecursiveDir)%(Filename)%(Extension)" />
+    <Content Include="_._" PackagePath="lib/net10.0" />
+  </ItemGroup>
+
+  <PropertyGroup>
+    <_SiaGLFWNative_IsWindows Condition="'$([System.Runtime.InteropServices.RuntimeInformation]::IsOSPlatform($([System.Runtime.InteropServices.OSPlatform]::Windows)))' == 'true'">true</_SiaGLFWNative_IsWindows>
+    <_SiaGLFWNative_IsMacOS Condition="'$([System.Runtime.InteropServices.RuntimeInformation]::IsOSPlatform($([System.Runtime.InteropServices.OSPlatform]::OSX)))' == 'true'">true</_SiaGLFWNative_IsMacOS>
+
+    <_SiaGLFWNative_Runtime Condition="'$(_SiaGLFWNative_Runtime)' == '' And '$(RuntimeIdentifier)' == 'win-x86'">win-x86</_SiaGLFWNative_Runtime>
+    <_SiaGLFWNative_Runtime Condition="'$(_SiaGLFWNative_Runtime)' == '' And '$(RuntimeIdentifier)' == 'win-x64'">win-x64</_SiaGLFWNative_Runtime>
+    <_SiaGLFWNative_Runtime Condition="'$(_SiaGLFWNative_Runtime)' == '' And '$(RuntimeIdentifier)' == 'osx-arm64'">osx-arm64</_SiaGLFWNative_Runtime>
+    <_SiaGLFWNative_Runtime Condition="'$(_SiaGLFWNative_Runtime)' == '' And '$(RuntimeIdentifier)' == 'osx-x64'">osx-x64</_SiaGLFWNative_Runtime>
+    <_SiaGLFWNative_Runtime Condition="'$(_SiaGLFWNative_Runtime)' == '' And '$(_SiaGLFWNative_IsWindows)' == 'true' And ('$(PlatformTarget)' == 'x86' Or '$(Prefer32Bit)' == 'true')">win-x86</_SiaGLFWNative_Runtime>
+    <_SiaGLFWNative_Runtime Condition="'$(_SiaGLFWNative_Runtime)' == '' And '$(_SiaGLFWNative_IsWindows)' == 'true'">win-x64</_SiaGLFWNative_Runtime>
+    <_SiaGLFWNative_Runtime Condition="'$(_SiaGLFWNative_Runtime)' == '' And '$(_SiaGLFWNative_IsMacOS)' == 'true' And '$(PlatformTarget)' == 'arm64'">osx-arm64</_SiaGLFWNative_Runtime>
+    <_SiaGLFWNative_Runtime Condition="'$(_SiaGLFWNative_Runtime)' == '' And '$(_SiaGLFWNative_IsMacOS)' == 'true'">osx-x64</_SiaGLFWNative_Runtime>
+
+    <_SiaGLFWNative_LibName Condition="'$(_SiaGLFWNative_Runtime)' == 'win-x86'">glfw3.dll</_SiaGLFWNative_LibName>
+    <_SiaGLFWNative_LibName Condition="'$(_SiaGLFWNative_Runtime)' == 'win-x64'">glfw3.dll</_SiaGLFWNative_LibName>
+    <_SiaGLFWNative_LibName Condition="'$(_SiaGLFWNative_Runtime)' == 'osx-x64'">libglfw.3.dylib</_SiaGLFWNative_LibName>
+    <_SiaGLFWNative_LibName Condition="'$(_SiaGLFWNative_Runtime)' == 'osx-arm64'">libglfw.3.dylib</_SiaGLFWNative_LibName>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <None Include="runtimes\$(_SiaGLFWNative_Runtime)\native\$(_SiaGLFWNative_LibName)"
+          Condition="'$(_SiaGLFWNative_Runtime)' != '' And Exists('runtimes\$(_SiaGLFWNative_Runtime)\native\$(_SiaGLFWNative_LibName)')"
+          Link="$(_SiaGLFWNative_LibName)"
+          Pack="false"
+          CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+  <UsingTask TaskName="DownloadGlfwBinariesTask"
+             TaskFactory="RoslynCodeTaskFactory"
+             AssemblyFile="$(MSBuildToolsPath)\Microsoft.Build.Tasks.Core.dll">
+    <ParameterGroup>
+      <Tag ParameterType="System.String" Required="true" />
+      <RuntimesDir ParameterType="System.String" Required="true" />
+      <Force ParameterType="System.Boolean" Required="false" />
+    </ParameterGroup>
+    <Task>
+      <Using Namespace="System.IO" />
+      <Using Namespace="System.IO.Compression" />
+      <Using Namespace="System.Net" />
+      <Using Namespace="System.Linq" />
+      <Code Type="Fragment" Language="cs">
+        <![CDATA[
+          var platforms = new (string Zip, string Rid, string Lib, string PathHint)[]
+          {
+              ("glfw-3.4.bin.WIN64.zip",  "win-x64",   "glfw3.dll",       "/lib-vc2022/"),
+              ("glfw-3.4.bin.WIN32.zip",  "win-x86",   "glfw3.dll",       "/lib-vc2022/"),
+              ("glfw-3.4.bin.MACOS.zip",  "osx-x64",   "libglfw.3.dylib", "/lib-x86_64/"),
+              ("glfw-3.4.bin.MACOS.zip",  "osx-arm64", "libglfw.3.dylib", "/lib-arm64/"),
+          };
+
+          var baseUrl = "https://github.com/glfw/glfw/releases/download/" + Tag;
+          var tempRoot = Path.Combine(Path.GetTempPath(), "glfw-" + Tag);
+
+          using var client = new WebClient();
+
+          foreach (var (zip, rid, lib, pathHint) in platforms)
+          {
+              var outDir = Path.Combine(RuntimesDir, rid, "native");
+              var outFile = Path.Combine(outDir, lib);
+
+              if (!Force && File.Exists(outFile))
+              {
+                  Log.LogMessage(MessageImportance.Normal, "  " + rid + "/" + lib + " exists, skip");
+                  continue;
+              }
+
+              var zipPath = Path.Combine(tempRoot, zip);
+              var extractDir = Path.Combine(tempRoot, rid);
+              var url = baseUrl + "/" + zip;
+
+              Log.LogMessage(MessageImportance.High, "Downloading " + zip + " ...");
+              Directory.CreateDirectory(tempRoot);
+              Directory.CreateDirectory(outDir);
+              client.DownloadFile(url, zipPath);
+
+              Log.LogMessage(MessageImportance.Normal, "Extracting ...");
+              if (Directory.Exists(extractDir))
+              {
+                  Directory.Delete(extractDir, true);
+              }
+
+              Directory.CreateDirectory(extractDir);
+              ZipFile.ExtractToDirectory(zipPath, extractDir);
+
+              var files = Directory.GetFiles(extractDir, lib, SearchOption.AllDirectories);
+              var found = files
+                  .FirstOrDefault(path => path.Replace('\\', '/').Contains(pathHint))
+                  ?? files.FirstOrDefault();
+
+              if (found != null)
+              {
+                  File.Copy(found, outFile, true);
+                  var kb = new FileInfo(outFile).Length / 1024;
+                  Log.LogMessage(MessageImportance.High, "  -> " + rid + "/native/" + lib + " (" + kb + " KB)");
+              }
+              else
+              {
+                  Log.LogMessage(MessageImportance.High, "  WARN: " + lib + " not found in " + zip);
+              }
+
+              File.Delete(zipPath);
+              try { Directory.Delete(extractDir, true); } catch { }
+          }
+
+          try { Directory.Delete(tempRoot, true); } catch { }
+        ]]>
+      </Code>
+    </Task>
+  </UsingTask>
+
+  <Target Name="FetchGlfwBinaries" BeforeTargets="GenerateNuspec">
+    <DownloadGlfwBinariesTask
+      Tag="$(GlfwReleaseTag)"
+      RuntimesDir="$(MSBuildThisFileDirectory)runtimes"
+      Force="$(ForceDownloadGlfwBinaries)" />
+    <ItemGroup>
+      <TfmSpecificPackageFile Include="$(MSBuildThisFileDirectory)runtimes/**"
+                              Exclude="$(MSBuildThisFileDirectory)runtimes/**/.gitkeep"
+                              PackagePath="runtimes/%(RecursiveDir)%(Filename)%(Extension)" />
+    </ItemGroup>
+  </Target>
+</Project>
