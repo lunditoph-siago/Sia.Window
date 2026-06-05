@@ -1,0 +1,8 @@
+<Solution>
+  <Project Path="Sia.Input/Sia.Input.csproj" />
+  <Project Path="Sia.Window/Sia.Window.csproj" />
+  <Project Path="Sia.GLFW/Sia.GLFW.csproj" />
+  <Project Path="Sia.GLFW.Native/Sia.GLFW.Native.csproj" />
+  <Project Path="Sia.Window.Tests/Sia.Window.Tests.csproj" />
+  <Project Path="Sia.GLFW.Tests/Sia.GLFW.Tests.csproj" />
+</Solution>
