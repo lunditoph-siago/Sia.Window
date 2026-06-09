@@ -3,15 +3,41 @@ using Sia.Input;
 
 namespace Sia.GLFW;
 
-/// <summary>Owns the GLFW lifetime and windows created for one Sia world.</summary>
 public sealed unsafe class GlfwModule : IAddon
 {
-    // Window handles are process-unique and every GLFW operation is confined
-    // to the initialization thread, so static routing tables are safe.
-    private static readonly Dictionary<nint, (World World, Entity Entity)> _routes = [];
+    private readonly record struct InputRoute(World World, Entity Entity, GlfwWindow Window);
+
+    private enum PendingInputKind
+    {
+        Key,
+        Character,
+        MouseButton,
+        MouseMoved,
+        MouseEntered,
+        MouseScrolled,
+    }
+
+    private readonly record struct PendingInputEvent(
+        InputRoute Route,
+        PendingInputKind Kind,
+        Key Key = default,
+        int ScanCode = 0,
+        InputAction Action = default,
+        KeyModifiers Modifiers = default,
+        MouseButton MouseButton = default,
+        uint CodePoint = 0,
+        double X = 0,
+        double Y = 0,
+        bool Entered = false);
+
+    private const int MaxPendingInputEvents = 65_536;
+
+    private static readonly Dictionary<nint, InputRoute> _routes = [];
+    private static List<PendingInputEvent> _pendingInputEvents = [];
+    private static List<PendingInputEvent> _dispatchingInputEvents = [];
+    private static int _droppedInputEvents;
     private static readonly List<Exception> _callbackErrors = [];
 
-    // Rooted for the process lifetime so GLFW never calls a collected delegate.
     private static readonly KeyCallback _keyCallback = OnKey;
     private static readonly CharCallback _charCallback = OnChar;
     private static readonly MouseButtonCallback _mouseButtonCallback = OnMouseButton;
@@ -28,13 +54,28 @@ public sealed unsafe class GlfwModule : IAddon
     public void OnInitialize(World world)
     {
         Glfw.Initialize();
-        _initialized = true;
         _world = world;
-
         _removeEntity = OnEntityRemoved;
         _removeWindow = OnWindowRemoved;
-        world.Dispatcher.Listen(_removeEntity);
-        world.Dispatcher.Listen(_removeWindow);
+
+        var entityListenerRegistered = false;
+        try {
+            world.Dispatcher.Listen(_removeEntity);
+            entityListenerRegistered = true;
+            world.Dispatcher.Listen(_removeWindow);
+            _initialized = true;
+        }
+        catch {
+            if (entityListenerRegistered && _removeEntity is not null) {
+                world.Dispatcher.Unlisten(_removeEntity);
+            }
+
+            _removeEntity = null;
+            _removeWindow = null;
+            _world = null;
+            Glfw.Terminate();
+            throw;
+        }
     }
 
     public void OnUninitialize(World world)
@@ -43,23 +84,55 @@ public sealed unsafe class GlfwModule : IAddon
             return;
         }
 
+        PurgePendingEvents(world);
+
+        List<Exception>? cleanupErrors = null;
+
         if (_removeEntity is not null) {
-            world.Dispatcher.Unlisten(_removeEntity);
+            try {
+                world.Dispatcher.Unlisten(_removeEntity);
+                _removeEntity = null;
+            }
+            catch (Exception exception) {
+                (cleanupErrors ??= []).Add(exception);
+            }
         }
+
         if (_removeWindow is not null) {
-            world.Dispatcher.Unlisten(_removeWindow);
+            try {
+                world.Dispatcher.Unlisten(_removeWindow);
+                _removeWindow = null;
+            }
+            catch (Exception exception) {
+                (cleanupErrors ??= []).Add(exception);
+            }
         }
 
-        foreach (var pair in _windows) {
-            var window = pair.Value;
-            _routes.Remove(window.Handle);
-            Glfw.DestroyWindow(ref window);
+        foreach (var entityId in _windows.Keys.ToArray()) {
+            try {
+                Release(entityId);
+            }
+            catch (Exception exception) {
+                (cleanupErrors ??= []).Add(exception);
+            }
         }
-        _windows.Clear();
 
-        _world = null;
-        Glfw.Terminate();
-        _initialized = false;
+        if (_windows.Count == 0) {
+            try {
+                Glfw.Terminate();
+                _world = null;
+                _initialized = false;
+            }
+            catch (Exception exception) {
+                (cleanupErrors ??= []).Add(exception);
+            }
+        }
+
+        if (cleanupErrors is not null) {
+            throw new AggregateException(
+                "One or more GLFW resources could not be released cleanly.",
+                cleanupErrors);
+        }
     }
 
     internal void Own(Entity entity, GlfwWindow window)
@@ -69,21 +142,59 @@ public sealed unsafe class GlfwModule : IAddon
                 $"Entity {entity.Id} already owns a GLFW window.");
         }
 
-        _routes[window.Handle] = (_world!, entity);
+        var routeAdded = false;
+        try {
+            if (!_routes.TryAdd(window.Handle, new InputRoute(_world!, entity, window))) {
+                throw new InvalidOperationException(
+                    $"GLFW window handle {window.Handle} is already registered.");
+            }
+            routeAdded = true;
 
-        var handle = (WindowHandle*)window.Handle;
-        GlfwUnsafe.SetKeyCallback(handle, _keyCallback);
-        GlfwUnsafe.SetCharCallback(handle, _charCallback);
-        GlfwUnsafe.SetMouseButtonCallback(handle, _mouseButtonCallback);
-        GlfwUnsafe.SetCursorPosCallback(handle, _cursorPosCallback);
-        GlfwUnsafe.SetCursorEnterCallback(handle, _cursorEnterCallback);
-        GlfwUnsafe.SetScrollCallback(handle, _scrollCallback);
+            var handle = (WindowHandle*)window.Handle;
+            GlfwUnsafe.SetKeyCallback(handle, _keyCallback);
+            GlfwUnsafe.SetCharCallback(handle, _charCallback);
+            GlfwUnsafe.SetMouseButtonCallback(handle, _mouseButtonCallback);
+            GlfwUnsafe.SetCursorPosCallback(handle, _cursorPosCallback);
+            GlfwUnsafe.SetCursorEnterCallback(handle, _cursorEnterCallback);
+            GlfwUnsafe.SetScrollCallback(handle, _scrollCallback);
+        }
+        catch {
+            if (routeAdded) {
+                _routes.Remove(window.Handle);
+            }
+            _windows.Remove(entity.Id);
+            throw;
+        }
     }
 
-    /// <summary>
-    /// Rethrows listener exceptions captured while native callbacks were on the
-    /// stack, after the surrounding poll has safely returned to managed code.
-    /// </summary>
+    internal static void DispatchPendingInputEvents()
+    {
+        (_pendingInputEvents, _dispatchingInputEvents) =
+            (_dispatchingInputEvents, _pendingInputEvents);
+
+        try {
+            foreach (var input in _dispatchingInputEvents) {
+                try {
+                    Dispatch(in input);
+                }
+                catch (Exception exception) {
+                    TryCaptureCallbackError(exception);
+                }
+            }
+        }
+        finally {
+            _dispatchingInputEvents.Clear();
+        }
+
+        if (_droppedInputEvents != 0) {
+            TryCaptureCallbackError(new GlfwException(
+                $"{_droppedInputEvents} GLFW input events were dropped."));
+            _droppedInputEvents = 0;
+        }
+
+        ThrowPendingCallbackErrors();
+    }
+
     internal static void ThrowPendingCallbackErrors()
     {
         if (_callbackErrors.Count == 0) {
@@ -150,109 +261,208 @@ public sealed unsafe class GlfwModule : IAddon
 
     private void Release(EntityId entityId)
     {
-        if (!_windows.Remove(entityId, out var window)) {
+        if (!_windows.TryGetValue(entityId, out var window)) {
             return;
         }
 
-        _routes.Remove(window.Handle);
-        Glfw.DestroyWindow(ref window);
+        var routeRemoved = _routes.Remove(window.Handle, out var route);
+
+        try {
+            Glfw.DestroyWindow(ref window);
+        }
+        catch {
+            if (routeRemoved) {
+                _routes.TryAdd(route.Window.Handle, route);
+            }
+            throw;
+        }
+
+        _windows.Remove(entityId);
     }
 
-    private static bool TryRoute(
-        WindowHandle* window,
-        out (World World, Entity Entity) route) =>
+    private static void PurgePendingEvents(World world)
+    {
+        _pendingInputEvents.RemoveAll(x =>
+            ReferenceEquals(x.Route.World, world));
+
+        _dispatchingInputEvents.RemoveAll(x =>
+            ReferenceEquals(x.Route.World, world));
+    }
+
+    private static bool TryCaptureRoute(WindowHandle* window, out InputRoute route) =>
         _routes.TryGetValue((nint)window, out route);
+
+    private static bool IsCurrent(in InputRoute route)
+    {
+        if (!route.Entity.IsValid ||
+            !route.Entity.Contains<GlfwWindow>()) {
+            return false;
+        }
+
+        return route.Entity.Get<GlfwWindow>() == route.Window;
+    }
+
+    private static void Dispatch(in PendingInputEvent input)
+    {
+        var route = input.Route;
+        if (!IsCurrent(in route)) {
+            return;
+        }
+
+        var world = route.World;
+        var entity = route.Entity;
+
+        switch (input.Kind) {
+            case PendingInputKind.Key:
+                SendKey(world, entity, input.Key, input.ScanCode, input.Action, input.Modifiers);
+                break;
+            case PendingInputKind.Character:
+                world.Send(entity, new InputEvents.TextEntered(input.CodePoint));
+                break;
+            case PendingInputKind.MouseButton:
+                SendMouseButton(world, entity, input.MouseButton, input.Action, input.Modifiers);
+                break;
+            case PendingInputKind.MouseMoved:
+                world.Send(entity, new InputEvents.MouseMoved(new MousePosition(input.X, input.Y)));
+                break;
+            case PendingInputKind.MouseEntered:
+                if (input.Entered) {
+                    world.Send(entity, new InputEvents.MouseEntered());
+                } else {
+                    world.Send(entity, new InputEvents.MouseExited());
+                }
+                break;
+            case PendingInputKind.MouseScrolled:
+                world.Send(entity, new InputEvents.MouseScrolled(new ScrollDelta(input.X, input.Y)));
+                break;
+        }
+    }
+
+    private static void Enqueue(in PendingInputEvent input)
+    {
+        if (input.Kind == PendingInputKind.MouseMoved &&
+            _pendingInputEvents.Count != 0) {
+            var last = _pendingInputEvents[^1];
+
+            if (last.Kind == PendingInputKind.MouseMoved &&
+                last.Route.Window == input.Route.Window) {
+                _pendingInputEvents[^1] = input;
+                return;
+            }
+        }
+
+        if (_pendingInputEvents.Count >= MaxPendingInputEvents) {
+            _droppedInputEvents++;
+            return;
+        }
+
+        _pendingInputEvents.Add(input);
+    }
+
+    private static void TryCaptureCallbackError(Exception exception)
+    {
+        try {
+            _callbackErrors.Add(exception);
+        }
+        catch {}
+    }
 
     private static void OnKey(
         WindowHandle* window, Key key, int scancode, InputAction action, KeyModifiers mods)
     {
-        if (!TryRoute(window, out var route)) {
-            return;
-        }
-
         try {
-            SendKey(route.World, route.Entity, key, scancode, action, mods);
+            if (TryCaptureRoute(window, out var route)) {
+                Enqueue(new PendingInputEvent(
+                    route,
+                    PendingInputKind.Key,
+                    Key: key,
+                    ScanCode: scancode,
+                    Action: action,
+                    Modifiers: mods));
+            }
         }
         catch (Exception exception) {
-            _callbackErrors.Add(exception);
+            TryCaptureCallbackError(exception);
         }
     }
 
     private static void OnChar(WindowHandle* window, uint codepoint)
     {
-        if (!TryRoute(window, out var route)) {
-            return;
-        }
-
         try {
-            route.World.Send(route.Entity, new InputEvents.TextEntered(codepoint));
+            if (TryCaptureRoute(window, out var route)) {
+                Enqueue(new PendingInputEvent(
+                    route,
+                    PendingInputKind.Character,
+                    CodePoint: codepoint));
+            }
         }
         catch (Exception exception) {
-            _callbackErrors.Add(exception);
+            TryCaptureCallbackError(exception);
         }
     }
 
     private static void OnMouseButton(
         WindowHandle* window, MouseButton button, InputAction action, KeyModifiers mods)
     {
-        if (!TryRoute(window, out var route)) {
-            return;
-        }
-
         try {
-            SendMouseButton(route.World, route.Entity, button, action, mods);
+            if (TryCaptureRoute(window, out var route)) {
+                Enqueue(new PendingInputEvent(
+                    route,
+                    PendingInputKind.MouseButton,
+                    Action: action,
+                    Modifiers: mods,
+                    MouseButton: button));
+            }
         }
         catch (Exception exception) {
-            _callbackErrors.Add(exception);
+            TryCaptureCallbackError(exception);
         }
     }
 
     private static void OnCursorPos(WindowHandle* window, double x, double y)
     {
-        if (!TryRoute(window, out var route)) {
-            return;
-        }
-
         try {
-            route.World.Send(
-                route.Entity, new InputEvents.MouseMoved(new MousePosition(x, y)));
+            if (TryCaptureRoute(window, out var route)) {
+                Enqueue(new PendingInputEvent(
+                    route,
+                    PendingInputKind.MouseMoved,
+                    X: x,
+                    Y: y));
+            }
         }
         catch (Exception exception) {
-            _callbackErrors.Add(exception);
+            TryCaptureCallbackError(exception);
         }
     }
 
     private static void OnCursorEnter(WindowHandle* window, bool entered)
     {
-        if (!TryRoute(window, out var route)) {
-            return;
-        }
-
         try {
-            if (entered) {
-                route.World.Send(route.Entity, new InputEvents.MouseEntered());
-            } else {
-                route.World.Send(route.Entity, new InputEvents.MouseExited());
+            if (TryCaptureRoute(window, out var route)) {
+                Enqueue(new PendingInputEvent(
+                    route,
+                    PendingInputKind.MouseEntered,
+                    Entered: entered));
             }
         }
         catch (Exception exception) {
-            _callbackErrors.Add(exception);
+            TryCaptureCallbackError(exception);
         }
     }
 
     private static void OnScroll(WindowHandle* window, double xoffset, double yoffset)
     {
-        if (!TryRoute(window, out var route)) {
-            return;
-        }
-
         try {
-            route.World.Send(
-                route.Entity,
-                new InputEvents.MouseScrolled(new ScrollDelta(xoffset, yoffset)));
+            if (TryCaptureRoute(window, out var route)) {
+                Enqueue(new PendingInputEvent(
+                    route,
+                    PendingInputKind.MouseScrolled,
+                    X: xoffset,
+                    Y: yoffset));
+            }
         }
         catch (Exception exception) {
-            _callbackErrors.Add(exception);
+            TryCaptureCallbackError(exception);
         }
     }
 }

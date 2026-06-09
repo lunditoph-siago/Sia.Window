@@ -5,7 +5,6 @@ namespace Sia.GLFW;
 
 public static class GlfwWorldExtensions
 {
-    /// <summary>Creates a GLFW-backed window entity owned by the world.</summary>
     public static Entity CreateGlfwWindow(
         this World world,
         in WindowDescriptor descriptor,
@@ -15,19 +14,46 @@ public static class GlfwWorldExtensions
         var module = world.AcquireAddon<GlfwModule>();
         var window = Glfw.CreateWindow(in descriptor, in options);
 
+        Entity entity = default!;
+        var entityCreated = false;
+
         try {
             var state = Glfw.ReadWindowState(window);
-            var entity = world.Create(HList.From(window, state));
+            entity = world.Create(HList.From(window, state));
+            entityCreated = true;
             module.Own(entity, window);
             return entity;
         }
-        catch {
-            Glfw.DestroyWindow(ref window);
+        catch (Exception creationError) {
+            List<Exception>? cleanupErrors = null;
+
+            if (entityCreated && entity.IsValid) {
+                try {
+                    entity.Destroy();
+                }
+                catch (Exception cleanupError) {
+                    (cleanupErrors ??= []).Add(cleanupError);
+                }
+            }
+
+            try {
+                Glfw.DestroyWindow(ref window);
+            }
+            catch (Exception cleanupError) {
+                (cleanupErrors ??= []).Add(cleanupError);
+            }
+
+            if (cleanupErrors is not null) {
+                cleanupErrors.Insert(0, creationError);
+                throw new AggregateException(
+                    "GLFW window creation failed and rollback was incomplete.",
+                    cleanupErrors);
+            }
+
             throw;
         }
     }
 
-    /// <summary>Destroys the resource entity and its owned native window.</summary>
     public static void DestroyGlfwWindow(this Entity entity)
     {
         if (!entity.IsValid) {

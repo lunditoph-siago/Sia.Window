@@ -4,7 +4,8 @@ namespace Sia.Window;
 public record struct WindowState(
     WindowSize Size,
     WindowSize FramebufferSize,
-    bool CloseRequested)
+    bool CloseRequested,
+    ContentScale ContentScale = default)
 {
     public WindowChanges Apply(in WindowState next)
     {
@@ -26,6 +27,9 @@ public record struct WindowState(
         }
         if (!previous.CloseRequested && current.CloseRequested) {
             changes |= WindowChanges.CloseRequested;
+        }
+        if (previous.ContentScale != current.ContentScale) {
+            changes |= WindowChanges.ContentScale;
         }
 
         return changes;

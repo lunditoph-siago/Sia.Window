@@ -19,10 +19,6 @@ public enum ErrorCode
     PlatformError = 0x00010008,
     FormatUnavailable = 0x00010009,
     NoWindowContext = 0x0001000A,
-    CursorUnavailable = 0x0001000B,
-    FeatureUnavailable = 0x0001000C,
-    FeatureUnimplemented = 0x0001000D,
-    PlatformUnavailable = 0x0001000E,
 }
 
 public enum CursorModeValue
@@ -40,16 +36,6 @@ public enum CursorShape
     Hand = 0x00036004,
     HResize = 0x00036005,
     VResize = 0x00036006,
-    NeswResize = 0x00036007,
-    NwseResize = 0x00036008,
-    ResizeAll = 0x00036009,
-    NotAllowed = 0x0003600A,
-    PointingHand = 0x0003600B,
-    ResizeEw = 0x0003600C,
-    ResizeNs = 0x0003600D,
-    ResizeNwse = 0x0003600E,
-    ResizeNesw = 0x0003600F,
-    ResizeAll2 = 0x00036010,
 }
 
 public enum ClientApi
@@ -90,7 +76,6 @@ public enum ReleaseBehavior
 public enum WindowHintClientApi
 {
     ClientApi = 0x00022001,
-    ContextCreationApi = 0x0002200B,
     ContextVersionMajor = 0x00022002,
     ContextVersionMinor = 0x00022003,
     ContextRobustness = 0x00022005,
@@ -98,12 +83,13 @@ public enum WindowHintClientApi
     OpenGlDebugContext = 0x00022007,
     OpenGlProfile = 0x00022008,
     ContextReleaseBehavior = 0x00022009,
+    ContextNoError = 0x0002200A,
+    ContextCreationApi = 0x0002200B,
 }
 
 public enum WindowHintBool
 {
     Focused = 0x00020001,
-    Iconified = 0x00020002,
     Resizable = 0x00020003,
     Visible = 0x00020004,
     Decorated = 0x00020005,
@@ -113,10 +99,16 @@ public enum WindowHintBool
     CenterCursor = 0x00020009,
     TransparentFramebuffer = 0x0002000A,
     FocusOnShow = 0x0002000C,
-    ScaleToMonitor = 0x0002200C,
-    DoubleBuffer = 0x00021010,
+
     Stereo = 0x0002100C,
-    SrgbCapable = 0x0002200E,
+    SrgbCapable = 0x0002100E,
+    DoubleBuffer = 0x00021010,
+
+    ContextNoError = 0x0002200A,
+    ScaleToMonitor = 0x0002200C,
+
+    CocoaRetinaFramebuffer = 0x00023001,
+    CocoaGraphicsSwitching = 0x00023003,
 }
 
 public enum WindowHintInt
@@ -134,8 +126,6 @@ public enum WindowHintInt
     AuxBuffers = 0x0002100B,
     Samples = 0x0002100D,
     RefreshRate = 0x0002100F,
-    Width = 0x00022000,
-    Height = 0x00022001,
 }
 
 public enum WindowHintString
@@ -143,7 +133,33 @@ public enum WindowHintString
     CocoaFrameName = 0x00023002,
     X11ClassName = 0x00024001,
     X11InstanceName = 0x00024002,
-    WaylandAppId = 0x00026001,
+}
+
+public enum WindowAttribute
+{
+    Focused = 0x00020001,
+    Iconified = 0x00020002,
+    Resizable = 0x00020003,
+    Visible = 0x00020004,
+    Decorated = 0x00020005,
+    AutoIconify = 0x00020006,
+    Floating = 0x00020007,
+    Maximized = 0x00020008,
+    TransparentFramebuffer = 0x0002000A,
+    Hovered = 0x0002000B,
+    FocusOnShow = 0x0002000C,
+
+    ClientApi = 0x00022001,
+    ContextVersionMajor = 0x00022002,
+    ContextVersionMinor = 0x00022003,
+    ContextRevision = 0x00022004,
+    ContextRobustness = 0x00022005,
+    OpenGlForwardCompat = 0x00022006,
+    OpenGlDebugContext = 0x00022007,
+    OpenGlProfile = 0x00022008,
+    ContextReleaseBehavior = 0x00022009,
+    ContextNoError = 0x0002200A,
+    ContextCreationApi = 0x0002200B,
 }
 
 public enum InputMode

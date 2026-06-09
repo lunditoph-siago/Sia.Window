@@ -70,15 +70,15 @@ public unsafe delegate void WindowRefreshCallback(WindowHandle* window);
 
 /// <summary>Window focus callback.</summary>
 [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
-public unsafe delegate void WindowFocusCallback(WindowHandle* window, bool focused);
+public unsafe delegate void WindowFocusCallback(WindowHandle* window, [MarshalAs(UnmanagedType.Bool)] bool focused);
 
 /// <summary>Window iconify callback.</summary>
 [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
-public unsafe delegate void WindowIconifyCallback(WindowHandle* window, bool iconified);
+public unsafe delegate void WindowIconifyCallback(WindowHandle* window, [MarshalAs(UnmanagedType.Bool)] bool iconified);
 
 /// <summary>Window maximize callback.</summary>
 [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
-public unsafe delegate void WindowMaximizeCallback(WindowHandle* window, bool maximized);
+public unsafe delegate void WindowMaximizeCallback(WindowHandle* window, [MarshalAs(UnmanagedType.Bool)] bool maximized);
 
 /// <summary>Framebuffer size callback.</summary>
 [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
@@ -96,10 +96,6 @@ public unsafe delegate void KeyCallback(WindowHandle* window, Key key, int scanc
 [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
 public unsafe delegate void CharCallback(WindowHandle* window, uint codepoint);
 
-/// <summary>Character with mods callback (GLFW 3.4+).</summary>
-[UnmanagedFunctionPointer(CallingConvention.Cdecl)]
-public unsafe delegate void CharModsCallback(WindowHandle* window, uint codepoint, KeyModifiers mods);
-
 /// <summary>Mouse button callback.</summary>
 [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
 public unsafe delegate void MouseButtonCallback(WindowHandle* window, MouseButton button, InputAction action, KeyModifiers mods);
@@ -110,7 +106,7 @@ public unsafe delegate void CursorPosCallback(WindowHandle* window, double x, do
 
 /// <summary>Cursor enter callback.</summary>
 [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
-public unsafe delegate void CursorEnterCallback(WindowHandle* window, bool entered);
+public unsafe delegate void CursorEnterCallback(WindowHandle* window, [MarshalAs(UnmanagedType.Bool)] bool entered);
 
 /// <summary>Scroll callback.</summary>
 [UnmanagedFunctionPointer(CallingConvention.Cdecl)]

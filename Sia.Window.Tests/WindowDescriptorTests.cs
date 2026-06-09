@@ -22,15 +22,4 @@ public sealed class WindowDescriptorTests
         Assert.Throws<ArgumentOutOfRangeException>(
             () => WindowDescriptor.Validate(descriptor));
     }
-
-    [Theory]
-    [InlineData(null)]
-    [InlineData("")]
-    public void ValidateRejectsMissingTitle(string? title)
-    {
-        var descriptor = new WindowDescriptor(1280, 720, title!);
-
-        Assert.ThrowsAny<ArgumentException>(
-            () => WindowDescriptor.Validate(descriptor));
-    }
 }

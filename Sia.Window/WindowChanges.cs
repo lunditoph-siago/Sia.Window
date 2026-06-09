@@ -7,4 +7,5 @@ public enum WindowChanges
     Size = 1 << 0,
     FramebufferSize = 1 << 1,
     CloseRequested = 1 << 2,
+    ContentScale = 1 << 3,
 }

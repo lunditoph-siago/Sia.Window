@@ -9,7 +9,7 @@ public sealed class GlfwInputTests
     public void SendKeyTranslatesEveryActionIntoAMatchingEvent()
     {
         using var world = new World();
-        var entity = world.Create(HList.From(new GlfwWindow(1)));
+        var entity = world.Create(HList.From(new GlfwWindow(1, 0)));
         var pressed = 0;
         var released = 0;
         var repeated = 0;
@@ -46,7 +46,7 @@ public sealed class GlfwInputTests
     public void SendMouseButtonIgnoresRepeatActions()
     {
         using var world = new World();
-        var entity = world.Create(HList.From(new GlfwWindow(1)));
+        var entity = world.Create(HList.From(new GlfwWindow(1, 0)));
         var pressed = 0;
         var released = 0;
 

@@ -10,4 +10,6 @@ public static class WindowEvents
     public readonly record struct FramebufferResized(WindowSize Size) : IEvent;
 
     public readonly record struct CloseRequested : IEvent;
+
+    public readonly record struct ContentScaleChanged(ContentScale Scale) : IEvent;
 }

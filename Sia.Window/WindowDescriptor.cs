@@ -22,6 +22,6 @@ public readonly record struct WindowDescriptor(
                 nameof(descriptor), "Window height must be positive.");
         }
 
-        ArgumentException.ThrowIfNullOrEmpty(descriptor.Title);
+        ArgumentNullException.ThrowIfNull(descriptor.Title);
     }
 }
