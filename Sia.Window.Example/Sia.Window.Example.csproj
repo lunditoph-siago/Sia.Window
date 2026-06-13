@@ -1,0 +1,21 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net11.0</TargetFramework>
+    <LangVersion>latest</LangVersion>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Compile Remove="obj_browser\**" />
+    <EmbeddedResource Remove="obj_browser\**" />
+    <None Remove="obj_browser\**" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Sia.GLFW\Sia.GLFW.csproj" />
+    <ProjectReference Include="..\Sia.GLFW.Native\Sia.GLFW.Native.csproj" />
+  </ItemGroup>
+</Project>

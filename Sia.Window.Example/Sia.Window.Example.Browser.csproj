@@ -1,0 +1,38 @@
+<Project Sdk="Microsoft.NET.Sdk.WebAssembly">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net11.0-browser</TargetFramework>
+    <RuntimeIdentifier>browser-wasm</RuntimeIdentifier>
+    <LangVersion>latest</LangVersion>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <IsPackable>false</IsPackable>
+    <EmitCompilerGeneratedFiles>true</EmitCompilerGeneratedFiles>
+    <OverrideHtmlAssetPlaceholders>true</OverrideHtmlAssetPlaceholders>
+    <WasmEnableSIMD>true</WasmEnableSIMD>
+    <EmccExtraLDFlags>-sALLOW_MEMORY_GROWTH -sUSE_GLFW=3</EmccExtraLDFlags>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Compile Remove="obj_desktop\**" />
+    <EmbeddedResource Remove="obj_desktop\**" />
+    <None Remove="obj_desktop\**" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <StaticWebAssetFingerprintPattern Include="JS" Pattern="*.js" Expression="#[.{fingerprint}]!" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Sia.GLFW\Sia.GLFW.csproj" />
+  </ItemGroup>
+
+  <Target Name="AddBrowserNativeModules" BeforeTargets="_GenerateManagedToNative" DependsOnTargets="PrepareForWasmBuildNative">
+    <ItemGroup>
+      <_WasmPInvokeModules Include="__Internal_emscripten" />
+      <_WasmPInvokeModules Include="__Internal_glfw" />
+    </ItemGroup>
+  </Target>
+</Project>

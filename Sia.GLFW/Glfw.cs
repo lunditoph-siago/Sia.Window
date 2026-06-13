@@ -32,13 +32,13 @@ public static unsafe class Glfw
                 }
 
                 try {
+#if !BROWSER
                     GlfwUnsafe.GetVersion(out var major, out var minor, out var revision);
-
                     if (major != 3 || minor < 3) {
                         throw new GlfwException(
                             $"GLFW 3.3 or newer is required, found {major}.{minor}.{revision}.");
                     }
-
+#endif
                     Volatile.Write(ref _generation, _generation + 1);
                     _ownerThreadId = threadId;
                 }
@@ -235,14 +235,14 @@ public static unsafe class Glfw
     public static void SwapBuffers(GlfwWindow window) =>
         GlfwUnsafe.SwapBuffers(GetAnyThreadPointer(window));
 
+#if !BROWSER
+
     public static nint GetProcAddress(string name)
     {
         VerifyInitialized();
         ArgumentException.ThrowIfNullOrEmpty(name);
         return GlfwUnsafe.GetProcAddress(name);
     }
-
-#if !BROWSER
 
     public static nint GetWin32Window(GlfwWindow window)
     {

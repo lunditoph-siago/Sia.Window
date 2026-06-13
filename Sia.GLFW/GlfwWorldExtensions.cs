@@ -9,6 +9,14 @@ public static class GlfwWorldExtensions
         this World world,
         in WindowDescriptor descriptor,
         in GlfwWindowOptions options = default)
+        => world.CreateGlfwWindow(in descriptor, EmptyHList.Default, in options);
+
+    public static Entity CreateGlfwWindow<TExtra>(
+        this World world,
+        in WindowDescriptor descriptor,
+        in TExtra extra,
+        in GlfwWindowOptions options = default)
+        where TExtra : struct, IHList
     {
         ArgumentNullException.ThrowIfNull(world);
         var module = world.AcquireAddon<GlfwModule>();
@@ -19,7 +27,7 @@ public static class GlfwWorldExtensions
 
         try {
             var state = Glfw.ReadWindowState(window);
-            entity = world.Create(HList.From(window, state));
+            entity = world.Create(HList.Cons(window, HList.Cons(state, extra)));
             entityCreated = true;
             module.Own(entity, window);
             return entity;
