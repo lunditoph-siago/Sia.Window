@@ -1,18 +1,17 @@
 <Project Sdk="Microsoft.NET.Sdk">
+
   <PropertyGroup>
     <TargetFrameworks>net11.0;net11.0-browser</TargetFrameworks>
-    <LangVersion>latest</LangVersion>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <IsPackable>true</IsPackable>
     <PackageId>Sia.GLFW</PackageId>
     <PackageDescription>Functional GLFW bindings with first-class Sia ECS integration.</PackageDescription>
-    <RootNamespace>Sia.GLFW</RootNamespace>
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="Sia" Version="2.1.0" />
+    <PackageReference Include="Sia" Version="2.1.1" />
     <ProjectReference Include="..\Sia.Input\Sia.Input.csproj" />
     <ProjectReference Include="..\Sia.Window\Sia.Window.csproj" />
   </ItemGroup>
@@ -20,4 +19,5 @@
   <ItemGroup>
     <InternalsVisibleTo Include="Sia.GLFW.Tests" />
   </ItemGroup>
+
 </Project>
