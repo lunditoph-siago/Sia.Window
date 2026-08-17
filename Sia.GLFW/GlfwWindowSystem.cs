@@ -11,7 +11,7 @@ public sealed class GlfwWindowSystem()
         world.AcquireAddon<GlfwModule>();
     }
 
-    public override void Execute(World world, IEntityQuery query)
+    public override void Execute(WorldContext context, IEntityQuery query)
     {
         Glfw.PollEvents();
 
@@ -29,7 +29,7 @@ public sealed class GlfwWindowSystem()
             ref var window = ref entity.Get<GlfwWindow>();
             ref var state = ref entity.Get<WindowState>();
             var next = Glfw.ReadWindowState(window);
-            Commit(world, entity, ref state, in next);
+            Commit(context.World, entity, ref state, in next);
         }
     }
 
