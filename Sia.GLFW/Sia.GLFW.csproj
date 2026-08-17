@@ -15,7 +15,7 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="Sia" Version="2.1.1" />
+    <PackageReference Include="Sia" Version="2.1.2" />
     <ProjectReference Include="..\Sia.Input\Sia.Input.csproj" />
     <ProjectReference Include="..\Sia.Window\Sia.Window.csproj" />
   </ItemGroup>

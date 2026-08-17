@@ -14,7 +14,7 @@ public sealed class GlfwWindowSystemTests
             Matchers.Of<WindowState>(),
             EventUnion.Of<WindowEvents.Resized>())
     {
-        public override void Execute(World world, IEntityQuery query)
+        public override void Execute(WorldContext context, IEntityQuery query)
         {
             foreach (var entity in query) {
                 onResize(entity);
