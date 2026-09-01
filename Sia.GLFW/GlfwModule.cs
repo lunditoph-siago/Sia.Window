@@ -5,7 +5,10 @@ namespace Sia.GLFW;
 
 public sealed unsafe class GlfwModule : IAddon
 {
-    private readonly record struct InputRoute(World World, Entity Entity, GlfwWindow Window);
+    private readonly record struct InputRoute(GlfwModule Module, Entity Entity, GlfwWindow Window)
+    {
+        public World World => Module.OwnerWorld;
+    }
 
     private enum PendingInputKind
     {
@@ -33,10 +36,9 @@ public sealed unsafe class GlfwModule : IAddon
     private const int MaxPendingInputEvents = 65_536;
 
     private static readonly Dictionary<nint, InputRoute> _routes = [];
-    private static List<PendingInputEvent> _pendingInputEvents = [];
-    private static List<PendingInputEvent> _dispatchingInputEvents = [];
-    private static int _droppedInputEvents;
-    private static readonly List<Exception> _callbackErrors = [];
+    private static readonly object _registryGate = new();
+    private static readonly List<GlfwModule> _activeModules = [];
+    private static readonly List<Exception> _orphanCallbackErrors = [];
 
     private static readonly KeyCallback _keyCallback = OnKey;
     private static readonly CharCallback _charCallback = OnChar;
@@ -46,10 +48,17 @@ public sealed unsafe class GlfwModule : IAddon
     private static readonly ScrollCallback _scrollCallback = OnScroll;
 
     private readonly Dictionary<EntityId, GlfwWindow> _windows = [];
+    private List<PendingInputEvent> _pendingInputEvents = [];
+    private List<PendingInputEvent> _dispatchingInputEvents = [];
+    private int _droppedInputEvents;
+    private readonly List<Exception> _callbackErrors = [];
+
     private WorldDispatcher.Listener<WorldEvents.Remove>? _removeEntity;
     private WorldDispatcher.Listener<WorldEvents.Remove<GlfwWindow>>? _removeWindow;
     private World? _world;
     private bool _initialized;
+
+    internal World OwnerWorld => _world!;
 
     public void OnInitialize(World world)
     {
@@ -64,6 +73,10 @@ public sealed unsafe class GlfwModule : IAddon
             entityListenerRegistered = true;
             world.Dispatcher.Listen(_removeWindow);
             _initialized = true;
+
+            lock (_registryGate) {
+                _activeModules.Add(this);
+            }
         }
         catch {
             if (entityListenerRegistered && _removeEntity is not null) {
@@ -84,7 +97,11 @@ public sealed unsafe class GlfwModule : IAddon
             return;
         }
 
-        PurgePendingEvents(world);
+        lock (_registryGate) {
+            _activeModules.Remove(this);
+        }
+
+        ClearPendingEvents();
 
         List<Exception>? cleanupErrors = null;
 
@@ -144,7 +161,7 @@ public sealed unsafe class GlfwModule : IAddon
 
         var routeAdded = false;
         try {
-            if (!_routes.TryAdd(window.Handle, new InputRoute(_world!, entity, window))) {
+            if (!_routes.TryAdd(window.Handle, new InputRoute(this, entity, window))) {
                 throw new InvalidOperationException(
                     $"GLFW window handle {window.Handle} is already registered.");
             }
@@ -169,6 +186,31 @@ public sealed unsafe class GlfwModule : IAddon
 
     internal static void DispatchPendingInputEvents()
     {
+        GlfwModule[] modules;
+        lock (_registryGate) {
+            modules = [.. _activeModules];
+        }
+
+        List<Exception>? errors = null;
+        foreach (var module in modules) {
+            module.DispatchPending(ref errors);
+        }
+
+        lock (_registryGate) {
+            if (_orphanCallbackErrors.Count != 0) {
+                (errors ??= []).AddRange(_orphanCallbackErrors);
+                _orphanCallbackErrors.Clear();
+            }
+        }
+
+        if (errors is not null) {
+            throw new AggregateException(
+                "One or more input event listeners failed.", errors);
+        }
+    }
+
+    private void DispatchPending(ref List<Exception>? errors)
+    {
         (_pendingInputEvents, _dispatchingInputEvents) =
             (_dispatchingInputEvents, _pendingInputEvents);
 
@@ -178,7 +220,7 @@ public sealed unsafe class GlfwModule : IAddon
                     Dispatch(in input);
                 }
                 catch (Exception exception) {
-                    TryCaptureCallbackError(exception);
+                    (errors ??= []).Add(exception);
                 }
             }
         }
@@ -187,24 +229,15 @@ public sealed unsafe class GlfwModule : IAddon
         }
 
         if (_droppedInputEvents != 0) {
-            TryCaptureCallbackError(new GlfwException(
+            (errors ??= []).Add(new GlfwException(
                 $"{_droppedInputEvents} GLFW input events were dropped."));
             _droppedInputEvents = 0;
         }
 
-        ThrowPendingCallbackErrors();
-    }
-
-    internal static void ThrowPendingCallbackErrors()
-    {
-        if (_callbackErrors.Count == 0) {
-            return;
+        if (_callbackErrors.Count != 0) {
+            (errors ??= []).AddRange(_callbackErrors);
+            _callbackErrors.Clear();
         }
-
-        var errors = _callbackErrors.ToArray();
-        _callbackErrors.Clear();
-        throw new AggregateException(
-            "One or more input event listeners failed.", errors);
     }
 
     internal static void SendKey(
@@ -280,13 +313,10 @@ public sealed unsafe class GlfwModule : IAddon
         _windows.Remove(entityId);
     }
 
-    private static void PurgePendingEvents(World world)
+    private void ClearPendingEvents()
     {
-        _pendingInputEvents.RemoveAll(x =>
-            ReferenceEquals(x.Route.World, world));
-
-        _dispatchingInputEvents.RemoveAll(x =>
-            ReferenceEquals(x.Route.World, world));
+        _pendingInputEvents.Clear();
+        _dispatchingInputEvents.Clear();
     }
 
     private static bool TryCaptureRoute(WindowHandle* window, out InputRoute route) =>
@@ -338,7 +368,7 @@ public sealed unsafe class GlfwModule : IAddon
         }
     }
 
-    private static void Enqueue(in PendingInputEvent input)
+    private void Enqueue(in PendingInputEvent input)
     {
         if (input.Kind == PendingInputKind.MouseMoved &&
             _pendingInputEvents.Count != 0) {
@@ -359,10 +389,25 @@ public sealed unsafe class GlfwModule : IAddon
         _pendingInputEvents.Add(input);
     }
 
-    private static void TryCaptureCallbackError(Exception exception)
+    private void CaptureCallbackError(Exception exception)
     {
         try {
             _callbackErrors.Add(exception);
+        }
+        catch {}
+    }
+
+    private static void CaptureCallbackError(WindowHandle* window, Exception exception)
+    {
+        try {
+            if (TryCaptureRoute(window, out var route)) {
+                route.Module.CaptureCallbackError(exception);
+                return;
+            }
+
+            lock (_registryGate) {
+                _orphanCallbackErrors.Add(exception);
+            }
         }
         catch {}
     }
@@ -372,7 +417,7 @@ public sealed unsafe class GlfwModule : IAddon
     {
         try {
             if (TryCaptureRoute(window, out var route)) {
-                Enqueue(new PendingInputEvent(
+                route.Module.Enqueue(new PendingInputEvent(
                     route,
                     PendingInputKind.Key,
                     Key: key,
@@ -382,7 +427,7 @@ public sealed unsafe class GlfwModule : IAddon
             }
         }
         catch (Exception exception) {
-            TryCaptureCallbackError(exception);
+            CaptureCallbackError(window, exception);
         }
     }
 
@@ -390,14 +435,14 @@ public sealed unsafe class GlfwModule : IAddon
     {
         try {
             if (TryCaptureRoute(window, out var route)) {
-                Enqueue(new PendingInputEvent(
+                route.Module.Enqueue(new PendingInputEvent(
                     route,
                     PendingInputKind.Character,
                     CodePoint: codepoint));
             }
         }
         catch (Exception exception) {
-            TryCaptureCallbackError(exception);
+            CaptureCallbackError(window, exception);
         }
     }
 
@@ -406,7 +451,7 @@ public sealed unsafe class GlfwModule : IAddon
     {
         try {
             if (TryCaptureRoute(window, out var route)) {
-                Enqueue(new PendingInputEvent(
+                route.Module.Enqueue(new PendingInputEvent(
                     route,
                     PendingInputKind.MouseButton,
                     Action: action,
@@ -415,7 +460,7 @@ public sealed unsafe class GlfwModule : IAddon
             }
         }
         catch (Exception exception) {
-            TryCaptureCallbackError(exception);
+            CaptureCallbackError(window, exception);
         }
     }
 
@@ -423,7 +468,7 @@ public sealed unsafe class GlfwModule : IAddon
     {
         try {
             if (TryCaptureRoute(window, out var route)) {
-                Enqueue(new PendingInputEvent(
+                route.Module.Enqueue(new PendingInputEvent(
                     route,
                     PendingInputKind.MouseMoved,
                     X: x,
@@ -431,7 +476,7 @@ public sealed unsafe class GlfwModule : IAddon
             }
         }
         catch (Exception exception) {
-            TryCaptureCallbackError(exception);
+            CaptureCallbackError(window, exception);
         }
     }
 
@@ -439,14 +484,14 @@ public sealed unsafe class GlfwModule : IAddon
     {
         try {
             if (TryCaptureRoute(window, out var route)) {
-                Enqueue(new PendingInputEvent(
+                route.Module.Enqueue(new PendingInputEvent(
                     route,
                     PendingInputKind.MouseEntered,
                     Entered: entered));
             }
         }
         catch (Exception exception) {
-            TryCaptureCallbackError(exception);
+            CaptureCallbackError(window, exception);
         }
     }
 
@@ -454,7 +499,7 @@ public sealed unsafe class GlfwModule : IAddon
     {
         try {
             if (TryCaptureRoute(window, out var route)) {
-                Enqueue(new PendingInputEvent(
+                route.Module.Enqueue(new PendingInputEvent(
                     route,
                     PendingInputKind.MouseScrolled,
                     X: xoffset,
@@ -462,7 +507,7 @@ public sealed unsafe class GlfwModule : IAddon
             }
         }
         catch (Exception exception) {
-            TryCaptureCallbackError(exception);
+            CaptureCallbackError(window, exception);
         }
     }
 }

@@ -5,7 +5,7 @@ using Sia.Window;
 
 namespace Sia.Window.Input.Example;
 
-internal sealed class WindowSpawner(ConsoleEventLog eventLog)
+internal sealed class WindowSpawner(ConsoleEventLog eventLog, string tag = "", int originX = 120)
 {
     private int _count;
 
@@ -21,18 +21,19 @@ internal sealed class WindowSpawner(ConsoleEventLog eventLog)
     {
         var index = ++_count;
         var offset = (index - 1) * 40;
+        var label = $"{tag}#{index}";
 
         var entity = world.CreateGlfwWindow(
             new WindowDescriptor(
                 Width: 640,
                 Height: 400,
-                Title: $"Sia.Window #{index}",
+                Title: $"Sia.Window {label}",
                 Resizable: true),
-            HList.From(new WindowLabel($"#{index}"), new WindowMovementTracker()),
+            HList.From(new WindowLabel(label), new WindowMovementTracker()),
             new GlfwWindowOptions(ClientApi.NoApi));
 
-        Glfw.SetPosition(entity.Get<GlfwWindow>(), new WindowPoint(120 + offset, 120 + offset));
-        eventLog.Write("window", $"#{index} opened · N opens another, Escape closes it", ConsoleColor.Green);
+        Glfw.SetPosition(entity.Get<GlfwWindow>(), new WindowPoint(originX + offset, 120 + offset));
+        eventLog.Write("window", $"{label} opened · N opens another, Escape closes it", ConsoleColor.Green);
         return entity;
     }
 }

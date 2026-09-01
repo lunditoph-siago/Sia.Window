@@ -6,7 +6,7 @@ namespace Sia.Window.Input.Example;
 internal sealed class WindowPositionSystem(ConsoleEventLog eventLog)
     : SystemBase(Matchers.Of<GlfwWindow, WindowMovementTracker>())
 {
-    public override void Execute(World world, IEntityQuery query)
+    public override void Execute(WorldContext context, IEntityQuery query)
     {
         foreach (var entity in query) {
             if (!entity.IsValid || !entity.Contains<GlfwWindow>()) {
