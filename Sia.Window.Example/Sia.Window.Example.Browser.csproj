@@ -11,6 +11,7 @@
     <EmitCompilerGeneratedFiles>true</EmitCompilerGeneratedFiles>
     <OverrideHtmlAssetPlaceholders>true</OverrideHtmlAssetPlaceholders>
     <WasmEnableSIMD>true</WasmEnableSIMD>
+    <WasmBuildNative>true</WasmBuildNative>
     <EmccExtraLDFlags>-sALLOW_MEMORY_GROWTH -sUSE_GLFW=3</EmccExtraLDFlags>
   </PropertyGroup>
 
