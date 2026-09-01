@@ -8,9 +8,16 @@ on:
 permissions:
   contents: read
   packages: write
+  id-token: write
+  attestations: write
+
+concurrency:
+  group: publish-${{ github.repository }}-${{ github.ref }}
+  cancel-in-progress: false
 
 jobs:
   build:
+    environment: nuget.org
     env:
       BUILD_CONFIG: 'Release'
       SOLUTION: 'Sia.Window.slnx'
@@ -42,6 +49,11 @@ jobs:
 
       - name: Pack project
         run: dotnet pack $SOLUTION --configuration $BUILD_CONFIG -p:PackageVersion=$VERSION --no-restore --no-build --output $PACKAGE_OUTPUT_DIRECTORY
+
+      - name: Attest packages
+        uses: actions/attest@v4
+        with:
+          subject-path: '${{ github.workspace }}/output/*.nupkg'
 
       - name: Publish packages
         env:
