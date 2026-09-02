@@ -9,7 +9,7 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="Sia" Version="2.1.3" />
+    <PackageReference Include="Sia" Version="2.1.5" />
   </ItemGroup>
 
 </Project>
