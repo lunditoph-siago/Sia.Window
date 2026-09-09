@@ -10,10 +10,6 @@
     <PackageDescription>Functional GLFW bindings with first-class Sia ECS integration.</PackageDescription>
   </PropertyGroup>
 
-  <PropertyGroup Condition="'$(TargetFramework)' == 'net11.0-browser'">
-    <SupportedOSPlatformVersion>0.0</SupportedOSPlatformVersion>
-  </PropertyGroup>
-
   <ItemGroup>
     <PackageReference Include="Sia" Version="2.1.5" />
     <ProjectReference Include="..\Sia.Input\Sia.Input.csproj" />
