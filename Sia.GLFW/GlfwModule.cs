@@ -1,3 +1,4 @@
+using System.Runtime.InteropServices;
 using Sia;
 using Sia.Input;
 
@@ -5,7 +6,7 @@ namespace Sia.GLFW;
 
 public sealed unsafe class GlfwModule : IAddon
 {
-    private readonly record struct InputRoute(GlfwModule Module, Entity Entity, GlfwWindow Window)
+    private sealed record InputRoute(GlfwModule Module, Entity Entity, GlfwWindow Window)
     {
         public World World => Module.OwnerWorld;
     }
@@ -20,24 +21,79 @@ public sealed unsafe class GlfwModule : IAddon
         MouseScrolled,
     }
 
-    private readonly record struct PendingInputEvent(
-        InputRoute Route,
-        PendingInputKind Kind,
-        Key Key = default,
-        int ScanCode = 0,
-        InputAction Action = default,
-        KeyModifiers Modifiers = default,
-        MouseButton MouseButton = default,
-        uint CodePoint = 0,
-        double X = 0,
-        double Y = 0,
-        bool Entered = false);
+    [StructLayout(LayoutKind.Explicit, Size = 16)]
+    private struct InputPayload
+    {
+        [FieldOffset(0)] public Key Key;
+        [FieldOffset(4)] public int ScanCode;
+        [FieldOffset(8)] public InputAction Action;
+        [FieldOffset(12)] public KeyModifiers Modifiers;
+        [FieldOffset(0)] public MouseButton MouseButton;
+        [FieldOffset(0)] public uint CodePoint;
+        [FieldOffset(0)] public double X;
+        [FieldOffset(8)] public double Y;
+        [FieldOffset(0)] public bool Entered;
+    }
+
+    private readonly struct PendingInputEvent
+    {
+        public InputRoute Route { get; }
+        public PendingInputKind Kind { get; }
+        private readonly InputPayload _payload;
+
+        public Key Key => _payload.Key;
+        public int ScanCode => _payload.ScanCode;
+        public InputAction Action => _payload.Action;
+        public KeyModifiers Modifiers => _payload.Modifiers;
+        public MouseButton MouseButton => _payload.MouseButton;
+        public uint CodePoint => _payload.CodePoint;
+        public double X => _payload.X;
+        public double Y => _payload.Y;
+        public bool Entered => _payload.Entered;
+
+        public PendingInputEvent(
+            InputRoute route, PendingInputKind kind,
+            Key Key = default, int ScanCode = 0, InputAction Action = default,
+            KeyModifiers Modifiers = default, MouseButton MouseButton = default,
+            uint CodePoint = 0, double X = 0, double Y = 0, bool Entered = false)
+        {
+            Route = route;
+            Kind = kind;
+            _payload = default;
+            switch (kind) {
+                case PendingInputKind.Key:
+                    _payload.Key = Key;
+                    _payload.ScanCode = ScanCode;
+                    _payload.Action = Action;
+                    _payload.Modifiers = Modifiers;
+                    break;
+                case PendingInputKind.Character:
+                    _payload.CodePoint = CodePoint;
+                    break;
+                case PendingInputKind.MouseButton:
+                    _payload.MouseButton = MouseButton;
+                    _payload.Action = Action;
+                    _payload.Modifiers = Modifiers;
+                    break;
+                case PendingInputKind.MouseMoved:
+                case PendingInputKind.MouseScrolled:
+                    _payload.X = X;
+                    _payload.Y = Y;
+                    break;
+                case PendingInputKind.MouseEntered:
+                    _payload.Entered = Entered;
+                    break;
+            }
+        }
+    }
 
     private const int MaxPendingInputEvents = 65_536;
+    private const int RetainedInputCapacity = 4_096;
+    private const int CapacityRecoveryBatches = 120;
 
     private static readonly Dictionary<nint, InputRoute> _routes = [];
     private static readonly object _registryGate = new();
-    private static readonly List<GlfwModule> _activeModules = [];
+    private static GlfwModule[] _activeModules = [];
     private static readonly List<Exception> _orphanCallbackErrors = [];
 
     private static readonly KeyCallback _keyCallback = OnKey;
@@ -51,6 +107,8 @@ public sealed unsafe class GlfwModule : IAddon
     private List<PendingInputEvent> _pendingInputEvents = [];
     private List<PendingInputEvent> _dispatchingInputEvents = [];
     private int _droppedInputEvents;
+    private int _smallInputBatches;
+    private bool _dispatching;
     private readonly List<Exception> _callbackErrors = [];
 
     private WorldDispatcher.Listener<WorldEvents.Remove>? _removeEntity;
@@ -74,9 +132,7 @@ public sealed unsafe class GlfwModule : IAddon
             world.Dispatcher.Listen(_removeWindow);
             _initialized = true;
 
-            lock (_registryGate) {
-                _activeModules.Add(this);
-            }
+            RegisterModule(this);
         }
         catch {
             if (entityListenerRegistered && _removeEntity is not null) {
@@ -97,9 +153,7 @@ public sealed unsafe class GlfwModule : IAddon
             return;
         }
 
-        lock (_registryGate) {
-            _activeModules.Remove(this);
-        }
+        UnregisterModule(this);
 
         ClearPendingEvents();
 
@@ -186,10 +240,7 @@ public sealed unsafe class GlfwModule : IAddon
 
     internal static void DispatchPendingInputEvents()
     {
-        GlfwModule[] modules;
-        lock (_registryGate) {
-            modules = [.. _activeModules];
-        }
+        var modules = Volatile.Read(ref _activeModules);
 
         List<Exception>? errors = null;
         foreach (var module in modules) {
@@ -211,8 +262,13 @@ public sealed unsafe class GlfwModule : IAddon
 
     private void DispatchPending(ref List<Exception>? errors)
     {
+        // A listener may poll again. Its newly queued input belongs to the next
+        // batch, rather than swapping the lists underneath the current iteration.
+        if (_dispatching) return;
+        _dispatching = true;
         (_pendingInputEvents, _dispatchingInputEvents) =
             (_dispatchingInputEvents, _pendingInputEvents);
+        var batchCount = _dispatchingInputEvents.Count;
 
         try {
             foreach (var input in _dispatchingInputEvents) {
@@ -226,6 +282,8 @@ public sealed unsafe class GlfwModule : IAddon
         }
         finally {
             _dispatchingInputEvents.Clear();
+            _dispatching = false;
+            RecoverInputCapacity(batchCount);
         }
 
         if (_droppedInputEvents != 0) {
@@ -237,6 +295,51 @@ public sealed unsafe class GlfwModule : IAddon
         if (_callbackErrors.Count != 0) {
             (errors ??= []).AddRange(_callbackErrors);
             _callbackErrors.Clear();
+        }
+    }
+
+    internal static void RegisterModule(GlfwModule module)
+    {
+        lock (_registryGate) {
+            var modules = _activeModules;
+            var next = new GlfwModule[modules.Length + 1];
+            modules.CopyTo(next, 0);
+            next[^1] = module;
+            Volatile.Write(ref _activeModules, next);
+        }
+    }
+
+    internal static void UnregisterModule(GlfwModule module)
+    {
+        lock (_registryGate) {
+            var modules = _activeModules;
+            var index = Array.IndexOf(modules, module);
+            if (index < 0) return;
+            var next = modules.Length == 1 ? [] : new GlfwModule[modules.Length - 1];
+            Array.Copy(modules, 0, next, 0, index);
+            Array.Copy(modules, index + 1, next, index, modules.Length - index - 1);
+            Volatile.Write(ref _activeModules, next);
+        }
+    }
+
+    private void RecoverInputCapacity(int batchCount)
+    {
+        if (batchCount > RetainedInputCapacity ||
+            _pendingInputEvents.Count > RetainedInputCapacity) {
+            _smallInputBatches = 0;
+            return;
+        }
+        if (_dispatchingInputEvents.Capacity <= RetainedInputCapacity &&
+            _pendingInputEvents.Capacity <= RetainedInputCapacity) {
+            _smallInputBatches = 0;
+            return;
+        }
+        if (++_smallInputBatches < CapacityRecoveryBatches) return;
+
+        // Recover one empty buffer at a time, with a cooldown between allocations.
+        if (_dispatchingInputEvents.Capacity > RetainedInputCapacity) {
+            _dispatchingInputEvents.Capacity = RetainedInputCapacity;
+            _smallInputBatches = 0;
         }
     }
 
@@ -304,7 +407,7 @@ public sealed unsafe class GlfwModule : IAddon
             Glfw.DestroyWindow(ref window);
         }
         catch {
-            if (routeRemoved) {
+            if (routeRemoved && route is not null) {
                 _routes.TryAdd(route.Window.Handle, route);
             }
             throw;
@@ -316,15 +419,16 @@ public sealed unsafe class GlfwModule : IAddon
     private void ClearPendingEvents()
     {
         _pendingInputEvents.Clear();
-        _dispatchingInputEvents.Clear();
+        if (!_dispatching) _dispatchingInputEvents.Clear();
+        _smallInputBatches = 0;
     }
 
     private static bool TryCaptureRoute(WindowHandle* window, out InputRoute route) =>
-        _routes.TryGetValue((nint)window, out route);
+        _routes.TryGetValue((nint)window, out route!);
 
     private static bool IsCurrent(in InputRoute route)
     {
-        if (!route.Entity.IsValid ||
+        if (route.Module._world is null || !route.Entity.IsValid ||
             !route.Entity.Contains<GlfwWindow>()) {
             return false;
         }
