@@ -30,7 +30,11 @@ internal sealed class WindowInputMonitor(ConsoleEventLog eventLog)
     public void PrintHelp()
     {
         Console.WriteLine("Sia.Window input example");
+#if BROWSER
+        Console.WriteLine("Browser supports one window · Escape closes it · F1 prints this help.");
+#else
         Console.WriteLine("N opens another window · Escape closes the one you're focused on · F1 prints this help.");
+#endif
         Console.WriteLine("Keyboard and text events are lossless; pointer motion is sampled for readability.");
         Console.WriteLine();
         eventLog.Write("window", "ready", ConsoleColor.Green);
