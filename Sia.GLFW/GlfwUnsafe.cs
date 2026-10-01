@@ -49,9 +49,14 @@ public static unsafe partial class GlfwUnsafe
 
     private static readonly ConcurrentDictionary<(nint Window, string Slot), Delegate> _rootedCallbacks = new();
 
+    // Managed calli to P/Invoke setters can mismatch signatures in Wasm AOT.
+    // Static method groups cache these delegates outside the input hot path.
+    private delegate nint WindowCallbackSetter(WindowHandle* window, nint callback);
+    private delegate nint GlobalCallbackSetter(nint callback);
+
     private static TCallback? SetWindowCallback<TCallback>(
         WindowHandle* window, string slot, TCallback? callback,
-        delegate*<WindowHandle*, nint, nint> setter, nint trampoline)
+        WindowCallbackSetter setter, nint trampoline)
         where TCallback : Delegate
     {
         var key = ((nint)window, slot);
@@ -68,7 +73,7 @@ public static unsafe partial class GlfwUnsafe
     }
 
     private static TCallback? SetGlobalCallback<TCallback>(
-        string slot, TCallback? callback, delegate*<nint, nint> setter, nint trampoline)
+        string slot, TCallback? callback, GlobalCallbackSetter setter, nint trampoline)
         where TCallback : Delegate
     {
         var key = ((nint)0, slot);
@@ -409,7 +414,7 @@ public static unsafe partial class GlfwUnsafe
         }
     }
     public static ErrorCallback? SetErrorCallback(ErrorCallback? callback) =>
-        SetGlobalCallback(nameof(SetErrorCallback), callback, &_setErrorCallback,
+        SetGlobalCallback(nameof(SetErrorCallback), callback, _setErrorCallback,
             (nint)(delegate* unmanaged<int, nint, void>)&_errorCallbackThunk);
 
     [LibraryImport(_libraryName, EntryPoint = "glfwSetWindowPosCallback")]
@@ -422,7 +427,7 @@ public static unsafe partial class GlfwUnsafe
         }
     }
     public static WindowPosCallback? SetWindowPosCallback(WindowHandle* window, WindowPosCallback? callback) =>
-        SetWindowCallback(window, nameof(SetWindowPosCallback), callback, &_setWindowPosCallback,
+        SetWindowCallback(window, nameof(SetWindowPosCallback), callback, _setWindowPosCallback,
             (nint)(delegate* unmanaged<WindowHandle*, int, int, void>)&_windowPosCallbackThunk);
 
     [LibraryImport(_libraryName, EntryPoint = "glfwSetWindowSizeCallback")]
@@ -435,7 +440,7 @@ public static unsafe partial class GlfwUnsafe
         }
     }
     public static WindowSizeCallback? SetWindowSizeCallback(WindowHandle* window, WindowSizeCallback? callback) =>
-        SetWindowCallback(window, nameof(SetWindowSizeCallback), callback, &_setWindowSizeCallback,
+        SetWindowCallback(window, nameof(SetWindowSizeCallback), callback, _setWindowSizeCallback,
             (nint)(delegate* unmanaged<WindowHandle*, int, int, void>)&_windowSizeCallbackThunk);
 
     [LibraryImport(_libraryName, EntryPoint = "glfwSetWindowCloseCallback")]
@@ -448,7 +453,7 @@ public static unsafe partial class GlfwUnsafe
         }
     }
     public static WindowCloseCallback? SetWindowCloseCallback(WindowHandle* window, WindowCloseCallback? callback) =>
-        SetWindowCallback(window, nameof(SetWindowCloseCallback), callback, &_setWindowCloseCallback,
+        SetWindowCallback(window, nameof(SetWindowCloseCallback), callback, _setWindowCloseCallback,
             (nint)(delegate* unmanaged<WindowHandle*, void>)&_windowCloseCallbackThunk);
 
     [LibraryImport(_libraryName, EntryPoint = "glfwSetWindowRefreshCallback")]
@@ -461,7 +466,7 @@ public static unsafe partial class GlfwUnsafe
         }
     }
     public static WindowRefreshCallback? SetWindowRefreshCallback(WindowHandle* window, WindowRefreshCallback? callback) =>
-        SetWindowCallback(window, nameof(SetWindowRefreshCallback), callback, &_setWindowRefreshCallback,
+        SetWindowCallback(window, nameof(SetWindowRefreshCallback), callback, _setWindowRefreshCallback,
             (nint)(delegate* unmanaged<WindowHandle*, void>)&_windowRefreshCallbackThunk);
 
     [LibraryImport(_libraryName, EntryPoint = "glfwSetWindowFocusCallback")]
@@ -474,7 +479,7 @@ public static unsafe partial class GlfwUnsafe
         }
     }
     public static WindowFocusCallback? SetWindowFocusCallback(WindowHandle* window, WindowFocusCallback? callback) =>
-        SetWindowCallback(window, nameof(SetWindowFocusCallback), callback, &_setWindowFocusCallback,
+        SetWindowCallback(window, nameof(SetWindowFocusCallback), callback, _setWindowFocusCallback,
             (nint)(delegate* unmanaged<WindowHandle*, int, void>)&_windowFocusCallbackThunk);
 
     [LibraryImport(_libraryName, EntryPoint = "glfwSetWindowIconifyCallback")]
@@ -487,7 +492,7 @@ public static unsafe partial class GlfwUnsafe
         }
     }
     public static WindowIconifyCallback? SetWindowIconifyCallback(WindowHandle* window, WindowIconifyCallback? callback) =>
-        SetWindowCallback(window, nameof(SetWindowIconifyCallback), callback, &_setWindowIconifyCallback,
+        SetWindowCallback(window, nameof(SetWindowIconifyCallback), callback, _setWindowIconifyCallback,
             (nint)(delegate* unmanaged<WindowHandle*, int, void>)&_windowIconifyCallbackThunk);
 
     [LibraryImport(_libraryName, EntryPoint = "glfwSetWindowMaximizeCallback")]
@@ -500,7 +505,7 @@ public static unsafe partial class GlfwUnsafe
         }
     }
     public static WindowMaximizeCallback? SetWindowMaximizeCallback(WindowHandle* window, WindowMaximizeCallback? callback) =>
-        SetWindowCallback(window, nameof(SetWindowMaximizeCallback), callback, &_setWindowMaximizeCallback,
+        SetWindowCallback(window, nameof(SetWindowMaximizeCallback), callback, _setWindowMaximizeCallback,
             (nint)(delegate* unmanaged<WindowHandle*, int, void>)&_windowMaximizeCallbackThunk);
 
     [LibraryImport(_libraryName, EntryPoint = "glfwSetFramebufferSizeCallback")]
@@ -513,7 +518,7 @@ public static unsafe partial class GlfwUnsafe
         }
     }
     public static FramebufferSizeCallback? SetFramebufferSizeCallback(WindowHandle* window, FramebufferSizeCallback? callback) =>
-        SetWindowCallback(window, nameof(SetFramebufferSizeCallback), callback, &_setFramebufferSizeCallback,
+        SetWindowCallback(window, nameof(SetFramebufferSizeCallback), callback, _setFramebufferSizeCallback,
             (nint)(delegate* unmanaged<WindowHandle*, int, int, void>)&_framebufferSizeCallbackThunk);
 
     [LibraryImport(_libraryName, EntryPoint = "glfwSetWindowContentScaleCallback")]
@@ -526,7 +531,7 @@ public static unsafe partial class GlfwUnsafe
         }
     }
     public static WindowContentScaleCallback? SetWindowContentScaleCallback(WindowHandle* window, WindowContentScaleCallback? callback) =>
-        SetWindowCallback(window, nameof(SetWindowContentScaleCallback), callback, &_setWindowContentScaleCallback,
+        SetWindowCallback(window, nameof(SetWindowContentScaleCallback), callback, _setWindowContentScaleCallback,
             (nint)(delegate* unmanaged<WindowHandle*, float, float, void>)&_windowContentScaleCallbackThunk);
 
     [LibraryImport(_libraryName, EntryPoint = "glfwSetKeyCallback")]
@@ -539,7 +544,7 @@ public static unsafe partial class GlfwUnsafe
         }
     }
     public static KeyCallback? SetKeyCallback(WindowHandle* window, KeyCallback? callback) =>
-        SetWindowCallback(window, nameof(SetKeyCallback), callback, &_setKeyCallback,
+        SetWindowCallback(window, nameof(SetKeyCallback), callback, _setKeyCallback,
             (nint)(delegate* unmanaged<WindowHandle*, int, int, int, int, void>)&_keyCallbackThunk);
 
     [LibraryImport(_libraryName, EntryPoint = "glfwSetCharCallback")]
@@ -552,7 +557,7 @@ public static unsafe partial class GlfwUnsafe
         }
     }
     public static CharCallback? SetCharCallback(WindowHandle* window, CharCallback? callback) =>
-        SetWindowCallback(window, nameof(SetCharCallback), callback, &_setCharCallback,
+        SetWindowCallback(window, nameof(SetCharCallback), callback, _setCharCallback,
             (nint)(delegate* unmanaged<WindowHandle*, uint, void>)&_charCallbackThunk);
 
     [LibraryImport(_libraryName, EntryPoint = "glfwSetMouseButtonCallback")]
@@ -565,7 +570,7 @@ public static unsafe partial class GlfwUnsafe
         }
     }
     public static MouseButtonCallback? SetMouseButtonCallback(WindowHandle* window, MouseButtonCallback? callback) =>
-        SetWindowCallback(window, nameof(SetMouseButtonCallback), callback, &_setMouseButtonCallback,
+        SetWindowCallback(window, nameof(SetMouseButtonCallback), callback, _setMouseButtonCallback,
             (nint)(delegate* unmanaged<WindowHandle*, int, int, int, void>)&_mouseButtonCallbackThunk);
 
     [LibraryImport(_libraryName, EntryPoint = "glfwSetCursorPosCallback")]
@@ -578,7 +583,7 @@ public static unsafe partial class GlfwUnsafe
         }
     }
     public static CursorPosCallback? SetCursorPosCallback(WindowHandle* window, CursorPosCallback? callback) =>
-        SetWindowCallback(window, nameof(SetCursorPosCallback), callback, &_setCursorPosCallback,
+        SetWindowCallback(window, nameof(SetCursorPosCallback), callback, _setCursorPosCallback,
             (nint)(delegate* unmanaged<WindowHandle*, double, double, void>)&_cursorPosCallbackThunk);
 
     [LibraryImport(_libraryName, EntryPoint = "glfwSetCursorEnterCallback")]
@@ -591,7 +596,7 @@ public static unsafe partial class GlfwUnsafe
         }
     }
     public static CursorEnterCallback? SetCursorEnterCallback(WindowHandle* window, CursorEnterCallback? callback) =>
-        SetWindowCallback(window, nameof(SetCursorEnterCallback), callback, &_setCursorEnterCallback,
+        SetWindowCallback(window, nameof(SetCursorEnterCallback), callback, _setCursorEnterCallback,
             (nint)(delegate* unmanaged<WindowHandle*, int, void>)&_cursorEnterCallbackThunk);
 
     [LibraryImport(_libraryName, EntryPoint = "glfwSetScrollCallback")]
@@ -604,7 +609,7 @@ public static unsafe partial class GlfwUnsafe
         }
     }
     public static ScrollCallback? SetScrollCallback(WindowHandle* window, ScrollCallback? callback) =>
-        SetWindowCallback(window, nameof(SetScrollCallback), callback, &_setScrollCallback,
+        SetWindowCallback(window, nameof(SetScrollCallback), callback, _setScrollCallback,
             (nint)(delegate* unmanaged<WindowHandle*, double, double, void>)&_scrollCallbackThunk);
 
     [LibraryImport(_libraryName, EntryPoint = "glfwSetDropCallback")]
@@ -617,7 +622,7 @@ public static unsafe partial class GlfwUnsafe
         }
     }
     public static DropCallback? SetDropCallback(WindowHandle* window, DropCallback? callback) =>
-        SetWindowCallback(window, nameof(SetDropCallback), callback, &_setDropCallback,
+        SetWindowCallback(window, nameof(SetDropCallback), callback, _setDropCallback,
             (nint)(delegate* unmanaged<WindowHandle*, int, byte**, void>)&_dropCallbackThunk);
 
     [LibraryImport(_libraryName, EntryPoint = "glfwSetMonitorCallback")]
@@ -630,7 +635,7 @@ public static unsafe partial class GlfwUnsafe
         }
     }
     public static MonitorCallback? SetMonitorCallback(MonitorCallback? callback) =>
-        SetGlobalCallback(nameof(SetMonitorCallback), callback, &_setMonitorCallback,
+        SetGlobalCallback(nameof(SetMonitorCallback), callback, _setMonitorCallback,
             (nint)(delegate* unmanaged<Monitor*, int, void>)&_monitorCallbackThunk);
 
     [LibraryImport(_libraryName, EntryPoint = "glfwSetJoystickCallback")]
@@ -643,7 +648,7 @@ public static unsafe partial class GlfwUnsafe
         }
     }
     public static JoystickCallback? SetJoystickCallback(JoystickCallback? callback) =>
-        SetGlobalCallback(nameof(SetJoystickCallback), callback, &_setJoystickCallback,
+        SetGlobalCallback(nameof(SetJoystickCallback), callback, _setJoystickCallback,
             (nint)(delegate* unmanaged<int, int, void>)&_joystickCallbackThunk);
 
     // Cursor
