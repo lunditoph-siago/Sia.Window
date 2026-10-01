@@ -87,6 +87,12 @@ public static unsafe class Glfw
         VerifyMainThread();
         WindowDescriptor.Validate(in descriptor);
         GlfwWindowOptions.Validate(in options);
+#if BROWSER
+        if (!_liveWindows.IsEmpty) {
+            throw new NotSupportedException(
+                "Emscripten GLFW supports only one live window.");
+        }
+#endif
         ApplyWindowHints(in descriptor, in options);
 
         var sharedContext = options.SharedContext.IsNull

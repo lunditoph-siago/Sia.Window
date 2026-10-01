@@ -12,7 +12,11 @@ internal sealed class WindowSpawner(ConsoleEventLog eventLog, string tag = "", i
     public void Attach(World world) =>
         world.Dispatcher.Listen<InputEvents.KeyPressed>((target, in @event) => {
             if (@event.Key == Key.N) {
+#if BROWSER
+                eventLog.Write("window", "browser supports one window", ConsoleColor.DarkGray);
+#else
                 Spawn(world);
+#endif
             }
             return false;
         });
@@ -33,7 +37,11 @@ internal sealed class WindowSpawner(ConsoleEventLog eventLog, string tag = "", i
             new GlfwWindowOptions(ClientApi.NoApi));
 
         Glfw.SetPosition(entity.Get<GlfwWindow>(), new WindowPoint(originX + offset, 120 + offset));
+#if BROWSER
+        eventLog.Write("window", $"{label} opened · Escape closes it", ConsoleColor.Green);
+#else
         eventLog.Write("window", $"{label} opened · N opens another, Escape closes it", ConsoleColor.Green);
+#endif
         return entity;
     }
 }
