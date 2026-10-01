@@ -296,12 +296,18 @@ public static unsafe class Glfw
 
 #endif
 
-    internal static WindowState ReadWindowState(GlfwWindow window) =>
-        new(
-            GetSize(window),
-            GetFramebufferSize(window),
-            ShouldClose(window),
-            GetContentScale(window));
+    internal static WindowState ReadWindowState(GlfwWindow window)
+    {
+        var handle = GetMainThreadPointer(window);
+        GlfwUnsafe.GetWindowSize(handle, out var width, out var height);
+        GlfwUnsafe.GetFramebufferSize(handle, out var framebufferWidth, out var framebufferHeight);
+        var closeRequested = GlfwUnsafe.WindowShouldClose(handle);
+        GlfwUnsafe.GetWindowContentScale(handle, out var scaleX, out var scaleY);
+        return new WindowState(
+            new WindowSize(width, height),
+            new WindowSize(framebufferWidth, framebufferHeight),
+            closeRequested, new ContentScale(scaleX, scaleY));
+    }
 
     private static void VerifyInitialized()
     {

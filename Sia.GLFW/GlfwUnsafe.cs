@@ -48,6 +48,16 @@ public static unsafe partial class GlfwUnsafe
     private static string? ReadUtf8(nint pointer) => Marshal.PtrToStringUTF8(pointer);
 
     private static readonly ConcurrentDictionary<(nint Window, string Slot), Delegate> _rootedCallbacks = new();
+    private static readonly string[] _windowCallbackSlots = [
+        nameof(SetWindowPosCallback), nameof(SetWindowSizeCallback),
+        nameof(SetWindowCloseCallback), nameof(SetWindowRefreshCallback),
+        nameof(SetWindowFocusCallback), nameof(SetWindowIconifyCallback),
+        nameof(SetWindowMaximizeCallback), nameof(SetFramebufferSizeCallback),
+        nameof(SetWindowContentScaleCallback), nameof(SetKeyCallback),
+        nameof(SetCharCallback), nameof(SetMouseButtonCallback),
+        nameof(SetCursorPosCallback), nameof(SetCursorEnterCallback),
+        nameof(SetScrollCallback), nameof(SetDropCallback),
+    ];
 
     // Managed calli to P/Invoke setters can mismatch signatures in Wasm AOT.
     // Static method groups cache these delegates outside the input hot path.
@@ -91,18 +101,16 @@ public static unsafe partial class GlfwUnsafe
 
     private static void UnrootWindowCallbacks(nint window)
     {
-        foreach (var key in _rootedCallbacks.Keys) {
-            if (key.Window == window) {
-                _rootedCallbacks.TryRemove(key, out _);
-            }
+        foreach (var slot in _windowCallbackSlots) {
+            _rootedCallbacks.TryRemove((window, slot), out _);
         }
     }
 
     private static void UnrootTerminatedCallbacks()
     {
-        foreach (var key in _rootedCallbacks.Keys) {
-            if (key.Window != 0 || key.Slot != nameof(SetErrorCallback)) {
-                _rootedCallbacks.TryRemove(key, out _);
+        foreach (var pair in _rootedCallbacks) {
+            if (pair.Key.Window != 0 || pair.Key.Slot != nameof(SetErrorCallback)) {
+                _rootedCallbacks.TryRemove(pair.Key, out _);
             }
         }
     }
